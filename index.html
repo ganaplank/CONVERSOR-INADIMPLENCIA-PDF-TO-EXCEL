@@ -42,7 +42,7 @@
                     </div>
                     <div class="step-info">
                         <span class="step-title">Upload</span>
-                        <span class="step-subtitle">Selecione o PDF</span>
+                        <span class="step-subtitle">Selecione os PDFs</span>
                     </div>
                 </div>
                 <div class="step-connector"><div class="step-connector-fill"></div></div>
@@ -110,12 +110,12 @@
                 <div class="step-header">
                     <div class="step-header-icon">📄</div>
                     <div>
-                        <h1>Upload do PDF</h1>
-                        <p>Selecione a planilha de inadimplência em formato PDF</p>
+                        <h1>Upload de PDFs</h1>
+                        <p>Selecione uma ou mais planilhas de inadimplência em formato PDF</p>
                     </div>
                 </div>
 
-                <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Área de upload. Arraste um PDF ou clique para selecionar.">
+                <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Área de upload. Arraste um ou mais PDFs ou clique para selecionar.">
                     <div class="upload-zone-content">
                         <div class="upload-icon-wrapper">
                             <svg class="upload-icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -124,14 +124,15 @@
                                 <line x1="12" y1="3" x2="12" y2="15"></line>
                             </svg>
                         </div>
-                        <h3>Arraste o PDF aqui</h3>
-                        <p>ou clique para selecionar o arquivo</p>
+                        <h3>Arraste os PDFs aqui</h3>
+                        <p>ou clique para selecionar os arquivos (você pode selecionar vários)</p>
                         <div class="upload-formats">
                             <span class="format-badge">PDF</span>
-                            <span class="format-info">Planilha de inadimplência</span>
+                            <span class="format-info">Planilhas de inadimplência suportadas</span>
                         </div>
                     </div>
-                    <input type="file" id="fileInput" accept=".pdf" hidden>
+                    <!-- Added 'multiple' attribute -->
+                    <input type="file" id="fileInput" accept=".pdf" multiple hidden>
                 </div>
 
                 <div class="file-card" id="fileCard" hidden>
@@ -147,7 +148,7 @@
                         <span class="file-card-name" id="fileName"></span>
                         <span class="file-card-size" id="fileSize"></span>
                     </div>
-                    <button class="btn-icon-remove" id="removeFile" title="Remover arquivo" aria-label="Remover arquivo">
+                    <button class="btn-icon-remove" id="removeFile" title="Remover arquivos" aria-label="Remover arquivos">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
                             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -157,7 +158,7 @@
 
                 <div class="parsing-status" id="parsingStatus" hidden>
                     <div class="spinner"></div>
-                    <span>Lendo e analisando o PDF...</span>
+                    <span id="parsingStatusText">Lendo e analisando os PDFs...</span>
                 </div>
 
                 <div class="parse-result" id="parseResult" hidden>
@@ -176,7 +177,7 @@
                     <div class="step-header-icon">⚙️</div>
                     <div>
                         <h1>Configuração</h1>
-                        <p>Defina os parâmetros para a conversão</p>
+                        <p>Defina os parâmetros para a conversão (salvos automaticamente)</p>
                     </div>
                 </div>
 
@@ -239,7 +240,7 @@
                             <h3>Blocos Detectados</h3>
                             <span class="detected-badge">Encontrados no PDF</span>
                         </div>
-                        <p class="blocks-instruction">Defina o código numérico para cada bloco encontrado:</p>
+                        <p class="blocks-instruction">Defina o código numérico para cada bloco encontrado (eles ficam salvos):</p>
                         <div class="blocks-grid" id="blocksGrid"></div>
                     </div>
                 </div>
@@ -251,7 +252,7 @@
                     <div class="step-header-icon">👁️</div>
                     <div>
                         <h1>Preview dos Dados</h1>
-                        <p>Revise os dados antes de gerar o Excel</p>
+                        <p>Revise os dados combinados antes de gerar o Excel</p>
                     </div>
                 </div>
 
@@ -297,7 +298,7 @@
                     <div class="step-header-icon">✨</div>
                     <div>
                         <h1>Pronto!</h1>
-                        <p>Seu arquivo Excel foi gerado com sucesso</p>
+                        <p>Seu arquivo Excel consolidado foi gerado com sucesso</p>
                     </div>
                 </div>
 
@@ -322,7 +323,7 @@
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
                         </svg>
-                        <span>Baixar Excel (.xlsx)</span>
+                        <span>Baixar Excel Consolidado (.xlsx)</span>
                     </button>
 
                     <button class="btn-ghost" id="newConversionBtn">

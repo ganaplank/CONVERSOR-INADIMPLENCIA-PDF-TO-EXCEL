@@ -12,8 +12,8 @@
     const state = {
         currentStep: 1,
         totalSteps: 4,
-        pdfFile: null,
-        parsedData: null,   // { entries, units, blocks }
+        pdfFiles: [],       // Array of files for batch processing
+        parsedData: null,   // Merged data: { entries, units, blocks }
         config: {
             condoCode: '',
             unitDigits: 2,
@@ -55,6 +55,7 @@
         fileSize: document.getElementById('fileSize'),
         removeFile: document.getElementById('removeFile'),
         parsingStatus: document.getElementById('parsingStatus'),
+        parsingStatusText: document.getElementById('parsingStatusText'),
         parseResult: document.getElementById('parseResult'),
         parseResultBadge: document.getElementById('parseResultBadge'),
         parseResultText: document.getElementById('parseResultText'),
@@ -89,8 +90,34 @@
     // Initialization
     // ========================
     function init() {
+        loadConfigFromStorage();
         bindEvents();
         updateNavigation();
+    }
+
+    function loadConfigFromStorage() {
+        try {
+            const savedConfig = localStorage.getItem('condoConvertConfig');
+            if (savedConfig) {
+                const parsed = JSON.parse(savedConfig);
+                state.config = { ...state.config, ...parsed };
+                
+                // Populate DOM with saved values
+                if (state.config.condoCode) DOM.condoCode.value = state.config.condoCode;
+                if (state.config.unitDigits) DOM.unitDigits.value = state.config.unitDigits;
+                if (state.config.dateFormat) DOM.dateFormat.value = state.config.dateFormat;
+            }
+        } catch (e) {
+            console.warn('Could not load config from localStorage', e);
+        }
+    }
+
+    function saveConfigToStorage() {
+        try {
+            localStorage.setItem('condoConvertConfig', JSON.stringify(state.config));
+        } catch (e) {
+            console.warn('Could not save config to localStorage', e);
+        }
     }
 
     function bindEvents() {
@@ -251,22 +278,24 @@
         e.stopPropagation();
         DOM.uploadZone.classList.remove('drag-over');
 
-        const files = e.dataTransfer.files;
+        const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
         if (files.length > 0) {
-            processFile(files[0]);
+            processFiles(files);
+        } else {
+            showToast('Nenhum arquivo PDF válido encontrado.', 'error');
         }
     }
 
     function handleFileSelect(e) {
-        const files = e.target.files;
+        const files = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
         if (files.length > 0) {
-            processFile(files[0]);
+            processFiles(files);
         }
     }
 
     function handleFileRemove(e) {
         e.stopPropagation();
-        state.pdfFile = null;
+        state.pdfFiles = [];
         state.parsedData = null;
         DOM.fileCard.hidden = true;
         DOM.parseResult.hidden = true;
@@ -276,53 +305,76 @@
         updateNavigation();
     }
 
-    async function processFile(file) {
-        // Validate file type
-        if (!file.name.toLowerCase().endsWith('.pdf')) {
-            showToast('Por favor, selecione um arquivo PDF.', 'error');
-            return;
-        }
-
-        state.pdfFile = file;
+    async function processFiles(files) {
+        state.pdfFiles = files;
 
         // Show file card
         DOM.uploadZone.hidden = true;
         DOM.fileCard.hidden = false;
-        DOM.fileName.textContent = file.name;
-        DOM.fileSize.textContent = formatFileSize(file.size);
+        
+        if (files.length === 1) {
+            DOM.fileName.textContent = files[0].name;
+            DOM.fileSize.textContent = formatFileSize(files[0].size);
+        } else {
+            DOM.fileName.textContent = `${files.length} PDFs selecionados`;
+            const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+            DOM.fileSize.textContent = `Tamanho total: ${formatFileSize(totalSize)}`;
+        }
 
         // Show parsing status
         DOM.parsingStatus.hidden = false;
         DOM.parseResult.hidden = true;
+        DOM.parseResultBadge.classList.remove('error');
 
-        try {
-            // Parse the PDF
-            const data = await parsePDF(file);
-            state.parsedData = data;
+        const allEntries = [];
+        const allUnits = new Set();
+        const allBlocks = new Set();
+        let errorCount = 0;
 
-            DOM.parsingStatus.hidden = true;
-            DOM.parseResult.hidden = false;
-
-            if (data.entries.length === 0) {
-                DOM.parseResultBadge.classList.add('error');
-                DOM.parseResultText.textContent = 'Nenhum dado de inadimplência encontrado neste PDF.';
-                showToast('Não foi possível extrair dados deste PDF.', 'error');
-            } else {
-                DOM.parseResultBadge.classList.remove('error');
-                const unitCount = data.units.length;
-                const entryCount = data.entries.length;
-                DOM.parseResultText.textContent =
-                    `${unitCount} unidade${unitCount !== 1 ? 's' : ''} encontrada${unitCount !== 1 ? 's' : ''} · ${entryCount} itens extraídos`;
-
-                showToast(`PDF analisado com sucesso! ${unitCount} unidades encontradas.`, 'success');
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            DOM.parsingStatusText.textContent = `Analisando PDF ${i + 1} de ${files.length}...`;
+            
+            try {
+                // Parse the PDF
+                const data = await parsePDF(file);
+                
+                // Merge data
+                data.entries.forEach(e => allEntries.push(e));
+                data.units.forEach(u => allUnits.add(u));
+                data.blocks.forEach(b => allBlocks.add(b));
+            } catch (error) {
+                console.error(`Error parsing PDF ${file.name}:`, error);
+                errorCount++;
             }
-        } catch (error) {
-            console.error('Error parsing PDF:', error);
-            DOM.parsingStatus.hidden = true;
-            DOM.parseResult.hidden = false;
+        }
+
+        DOM.parsingStatus.hidden = true;
+        DOM.parseResult.hidden = false;
+
+        // Save merged data
+        state.parsedData = {
+            entries: allEntries,
+            units: Array.from(allUnits),
+            blocks: Array.from(allBlocks).sort()
+        };
+
+        if (allEntries.length === 0) {
             DOM.parseResultBadge.classList.add('error');
-            DOM.parseResultText.textContent = 'Erro ao ler o PDF. Verifique se é um PDF válido.';
-            showToast('Erro ao processar o PDF.', 'error');
+            DOM.parseResultText.textContent = 'Falha: formato de PDF desconhecido ou sem dados de inadimplência.';
+            showToast('Não foi possível extrair dados dos PDFs.', 'error');
+            state.parsedData = null; // Prevent proceeding
+        } else {
+            const unitCount = state.parsedData.units.length;
+            const entryCount = state.parsedData.entries.length;
+            
+            let resultMsg = `${unitCount} unidade${unitCount !== 1 ? 's' : ''} em ${entryCount} linhas`;
+            if (errorCount > 0) {
+                resultMsg += ` (⚠️ ${errorCount} PDF${errorCount > 1 ? 's' : ''} falhou)`;
+            }
+            
+            DOM.parseResultText.textContent = resultMsg;
+            showToast(`Análise concluída com sucesso!`, 'success');
         }
 
         updateNavigation();
@@ -332,7 +384,7 @@
     // Step 2: Configure
     // ========================
     function setupConfigStep() {
-        // Read current config values
+        // Read current config values (already populated from localStorage if available)
         state.config.condoCode = DOM.condoCode.value;
         state.config.unitDigits = parseInt(DOM.unitDigits.value) || 2;
         state.config.dateFormat = DOM.dateFormat.value;
@@ -350,16 +402,19 @@
 
     function handleCondoCodeChange() {
         state.config.condoCode = DOM.condoCode.value.trim();
+        saveConfigToStorage();
         updateNavigation();
     }
 
     function handleUnitDigitsChange() {
         state.config.unitDigits = parseInt(DOM.unitDigits.value) || 2;
+        saveConfigToStorage();
         updateUnitPreview();
     }
 
     function handleDateFormatChange() {
         state.config.dateFormat = DOM.dateFormat.value;
+        saveConfigToStorage();
     }
 
     function updateUnitPreview() {
@@ -413,6 +468,7 @@
             const input = item.querySelector('.block-input');
             input.addEventListener('input', () => {
                 state.config.blockCodes[block] = parseInt(input.value) || 0;
+                saveConfigToStorage();
             });
         }
     }
@@ -469,7 +525,7 @@
         try {
             state.workbook = generateExcelWorkbook(state.parsedData.entries, state.config);
 
-            const filename = getExcelFilename(state.pdfFile.name);
+            const filename = getExcelFilename(state.pdfFiles.length === 1 ? state.pdfFiles[0].name : `Inadimplencia_Multi_${state.config.condoCode}.pdf`);
             DOM.downloadFilename.textContent = filename;
 
             // Summary
@@ -485,10 +541,10 @@
     }
 
     function handleDownload() {
-        if (!state.workbook || !state.pdfFile) return;
+        if (!state.workbook || state.pdfFiles.length === 0) return;
 
         try {
-            const filename = getExcelFilename(state.pdfFile.name);
+            const filename = getExcelFilename(state.pdfFiles.length === 1 ? state.pdfFiles[0].name : `Inadimplencia_Multi_${state.config.condoCode}.pdf`);
             downloadExcel(state.workbook, filename);
             showToast('Excel baixado com sucesso!', 'success');
         } catch (error) {
@@ -499,11 +555,9 @@
 
     function handleNewConversion() {
         // Reset state
-        state.pdfFile = null;
+        state.pdfFiles = [];
         state.parsedData = null;
         state.workbook = null;
-        state.config.condoCode = '';
-        state.config.blockCodes = {};
 
         // Reset UI
         DOM.fileCard.hidden = true;
@@ -511,7 +565,6 @@
         DOM.parsingStatus.hidden = true;
         DOM.uploadZone.hidden = false;
         DOM.fileInput.value = '';
-        DOM.condoCode.value = '';
         DOM.previewBody.innerHTML = '';
 
         // Go to step 1

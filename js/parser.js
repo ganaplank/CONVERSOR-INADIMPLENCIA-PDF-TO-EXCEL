@@ -1,5 +1,5 @@
 /**
- * CondoConvert — PDF Parser
+ * CondoConvert — PDF Parser Strategy Manager
  * Extracts inadimplência data from PDF files using pdf.js
  */
 
@@ -14,23 +14,6 @@ const MONTHS_PT = {
     'set': 9, 'out': 10, 'nov': 11, 'dez': 12
 };
 
-// Regex for month/year competência pattern
-const COMP_REGEX = /(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\/\d{2}/i;
-
-// Regex to match a unit+comp(+optional desc) line
-// e.g., "11 fev/26" or "82 jan/26 Cota: R$ 1.005,00"
-const UNIT_COMP_REGEX = /^(\d{1,4})\s+((?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\/\d{2})\s*(.*)/i;
-
-// Regex to match a comp(+optional desc) line
-// e.g., "fev/26" or "jan/26 Cota: R$997,00"
-const COMP_LINE_REGEX = /^((?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\/\d{2})\s*(.*)/i;
-
-// Regex for description with value: "Cota: R$ 1.098,46" or "Água : R$ 140,84"
-const DESC_VALUE_REGEX = /^(.+?)\s*:\s*R\$\s*([\d.,]+)/;
-
-// Regex for Acordo: "Acordo Parcela 4-5 R$ 1.437,59"
-const ACORDO_REGEX = /^(Acordo\s+.+?)\s+R\$\s*([\d.,]+)/i;
-
 /**
  * Parse a Brazilian currency value string to a number.
  * Handles: "1.098,46", "997,00", "1098,46", "997,000"
@@ -40,38 +23,6 @@ function parseMoneyValue(str) {
     // Remove dots (thousand separators), replace comma with period
     const cleaned = str.replace(/\./g, '').replace(',', '.');
     return parseFloat(cleaned) || 0;
-}
-
-/**
- * Try to parse a text line as a description item.
- * Returns { description, value } or null.
- */
-function tryParseDescription(text) {
-    if (!text || !text.trim()) return null;
-    text = text.trim();
-
-    // Try standard format: "Name: R$ Value"
-    let match = text.match(DESC_VALUE_REGEX);
-    if (match) {
-        const desc = match[1].trim();
-        // Skip if the "description" is actually a header or title
-        if (/^(UNIDADE|COMPETENCIA|DESCRI|VALOR|INADIMPL)/i.test(desc)) return null;
-        return {
-            description: desc.replace(/\s+/g, ' '), // normalize spaces
-            value: parseMoneyValue(match[2])
-        };
-    }
-
-    // Try Acordo format: "Acordo ... R$ Value"
-    match = text.match(ACORDO_REGEX);
-    if (match) {
-        return {
-            description: match[1].trim().replace(/\s+/g, ' '),
-            value: parseMoneyValue(match[2])
-        };
-    }
-
-    return null;
 }
 
 /**
@@ -86,7 +37,7 @@ function parseCompetencia(comp) {
 }
 
 /**
- * Extract text items from a PDF file and group them into lines.
+ * Extract text items from a PDF file and group them into lines by Y coordinate proximity.
  * @param {File} file - The PDF file
  * @returns {Promise<string[]>} Array of text lines
  */
@@ -101,7 +52,7 @@ async function extractTextLines(file) {
         const textContent = await page.getTextContent();
         const viewport = page.getViewport({ scale: 1 });
 
-        // Find the X position of the "VALOR" header to identify the total column
+        // Find the X position of the "VALOR" header to identify the total column (Specific to Varandas, but safe overall)
         let valorHeaderX = null;
 
         for (const item of textContent.items) {
@@ -178,165 +129,6 @@ async function extractTextLines(file) {
 }
 
 /**
- * Parse text lines into structured inadimplência data.
- * @param {string[]} lines - Array of text lines
- * @returns {{ entries: Array, units: string[], blocks: string[] }}
- */
-function parseLines(lines) {
-    const results = [];
-    let currentUnit = null;
-    let currentComp = null;
-    let pendingDescs = []; // descriptions waiting to be assigned to next comp
-    const unitsSet = new Set();
-    const blocksSet = new Set();
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-
-        // Skip title and headers
-        if (/^INADIMPL/i.test(line)) continue;
-        if (/^UNIDADE\s/i.test(line)) continue;
-        if (/^DESCRI[CÇ]/i.test(line)) continue;
-
-        // 1) Try to match unit + comp (+ optional desc)
-        const unitCompMatch = line.match(UNIT_COMP_REGEX);
-        if (unitCompMatch) {
-            currentUnit = unitCompMatch[1];
-            currentComp = unitCompMatch[2];
-            unitsSet.add(currentUnit);
-
-            // Flush pending descriptions → assign to this unit/comp
-            for (const desc of pendingDescs) {
-                results.push({
-                    unit: currentUnit,
-                    competencia: currentComp,
-                    description: desc.description,
-                    value: desc.value
-                });
-            }
-            pendingDescs = [];
-
-            // Check if there's a description on the same line
-            const rest = unitCompMatch[3].trim();
-            if (rest) {
-                const desc = tryParseDescription(rest);
-                if (desc) {
-                    results.push({
-                        unit: currentUnit,
-                        competencia: currentComp,
-                        description: desc.description,
-                        value: desc.value
-                    });
-                }
-            }
-            continue;
-        }
-
-        // 2) Try to match comp only (+ optional desc)
-        const compMatch = line.match(COMP_LINE_REGEX);
-        if (compMatch) {
-            currentComp = compMatch[1];
-
-            // Flush pending descriptions → assign to this comp
-            for (const desc of pendingDescs) {
-                results.push({
-                    unit: currentUnit,
-                    competencia: currentComp,
-                    description: desc.description,
-                    value: desc.value
-                });
-            }
-            pendingDescs = [];
-
-            // Check if there's a description on the same line
-            const rest = compMatch[2].trim();
-            if (rest) {
-                const desc = tryParseDescription(rest);
-                if (desc) {
-                    results.push({
-                        unit: currentUnit,
-                        competencia: currentComp,
-                        description: desc.description,
-                        value: desc.value
-                    });
-                }
-            }
-            continue;
-        }
-
-        // 3) Try to match as description
-        const desc = tryParseDescription(line);
-        if (desc) {
-            // Determine if this is a NEW block (Cota after Gás/Acordo = start of new comp)
-            const isNewBlock = isStartOfNewBlock(desc, results);
-
-            if (!currentUnit || !currentComp || isNewBlock) {
-                // Buffer this description until we find the next comp/unit
-                pendingDescs.push(desc);
-            } else {
-                results.push({
-                    unit: currentUnit,
-                    competencia: currentComp,
-                    description: desc.description,
-                    value: desc.value
-                });
-            }
-            continue;
-        }
-
-        // 4) Check for block indicators (e.g., "BLOCO A", "BL. B")
-        const blockMatch = line.match(/^(?:BLOCO|BL\.?)\s+([A-Z])/i);
-        if (blockMatch) {
-            blocksSet.add(blockMatch[1].toUpperCase());
-            continue;
-        }
-
-        // 5) Standalone total or unrecognized line → skip
-    }
-
-    // Flush any remaining pending descriptions (shouldn't happen normally)
-    for (const desc of pendingDescs) {
-        if (currentUnit && currentComp) {
-            results.push({
-                unit: currentUnit,
-                competencia: currentComp,
-                description: desc.description,
-                value: desc.value
-            });
-        }
-    }
-
-    // Deduplicate consecutive entries (handles page break repeats)
-    const deduplicated = deduplicateEntries(results);
-
-    return {
-        entries: deduplicated,
-        units: Array.from(unitsSet),
-        blocks: Array.from(blocksSet).sort()
-    };
-}
-
-/**
- * Check if a description marks the start of a new comp block.
- * "Cota" appearing after "Gás" or "Acordo" = new block.
- */
-function isStartOfNewBlock(desc, results) {
-    if (results.length === 0) return false;
-
-    const isCota = /^cota/i.test(desc.description);
-    if (!isCota) return false;
-
-    const lastResult = results[results.length - 1];
-    const lastDesc = lastResult.description.toLowerCase();
-
-    return lastDesc.startsWith('gás') ||
-           lastDesc.startsWith('gas') ||
-           lastDesc.startsWith('g\u00e1s') ||
-           lastDesc.startsWith('acordo');
-}
-
-/**
  * Remove consecutive duplicate entries (from page breaks).
  */
 function deduplicateEntries(entries) {
@@ -352,6 +144,165 @@ function deduplicateEntries(entries) {
     });
 }
 
+// ============================================================================
+// STRATEGY: FORMATO VARANDAS
+// ============================================================================
+
+const UNIT_COMP_REGEX = /^(\d{1,4})\s+((?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\/\d{2})\s*(.*)/i;
+const COMP_LINE_REGEX = /^((?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\/\d{2})\s*(.*)/i;
+const DESC_VALUE_REGEX = /^(.+?)\s*:\s*R\$\s*([\d.,]+)/;
+const ACORDO_REGEX = /^(Acordo\s+.+?)\s+R\$\s*([\d.,]+)/i;
+
+function tryParseDescriptionVarandas(text) {
+    if (!text || !text.trim()) return null;
+    text = text.trim();
+
+    let match = text.match(DESC_VALUE_REGEX);
+    if (match) {
+        const desc = match[1].trim();
+        if (/^(UNIDADE|COMPETENCIA|DESCRI|VALOR|INADIMPL)/i.test(desc)) return null;
+        return {
+            description: desc.replace(/\s+/g, ' '),
+            value: parseMoneyValue(match[2])
+        };
+    }
+
+    match = text.match(ACORDO_REGEX);
+    if (match) {
+        return {
+            description: match[1].trim().replace(/\s+/g, ' '),
+            value: parseMoneyValue(match[2])
+        };
+    }
+    return null;
+}
+
+function isStartOfNewBlockVarandas(desc, results) {
+    if (results.length === 0) return false;
+    const isCota = /^cota/i.test(desc.description);
+    if (!isCota) return false;
+    const lastResult = results[results.length - 1];
+    const lastDesc = lastResult.description.toLowerCase();
+    return lastDesc.startsWith('gás') || lastDesc.startsWith('gas') || lastDesc.startsWith('g\u00e1s') || lastDesc.startsWith('acordo');
+}
+
+function parseLinesVarandas(lines) {
+    const results = [];
+    let currentUnit = null;
+    let currentComp = null;
+    let pendingDescs = []; 
+    const unitsSet = new Set();
+    const blocksSet = new Set();
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        if (/^INADIMPL/i.test(line) || /^UNIDADE\s/i.test(line) || /^DESCRI[CÇ]/i.test(line)) continue;
+
+        const unitCompMatch = line.match(UNIT_COMP_REGEX);
+        if (unitCompMatch) {
+            currentUnit = unitCompMatch[1];
+            currentComp = unitCompMatch[2];
+            unitsSet.add(currentUnit);
+
+            for (const desc of pendingDescs) {
+                results.push({ unit: currentUnit, competencia: currentComp, description: desc.description, value: desc.value });
+            }
+            pendingDescs = [];
+
+            const rest = unitCompMatch[3].trim();
+            if (rest) {
+                const desc = tryParseDescriptionVarandas(rest);
+                if (desc) results.push({ unit: currentUnit, competencia: currentComp, description: desc.description, value: desc.value });
+            }
+            continue;
+        }
+
+        const compMatch = line.match(COMP_LINE_REGEX);
+        if (compMatch) {
+            currentComp = compMatch[1];
+
+            for (const desc of pendingDescs) {
+                results.push({ unit: currentUnit, competencia: currentComp, description: desc.description, value: desc.value });
+            }
+            pendingDescs = [];
+
+            const rest = compMatch[2].trim();
+            if (rest) {
+                const desc = tryParseDescriptionVarandas(rest);
+                if (desc) results.push({ unit: currentUnit, competencia: currentComp, description: desc.description, value: desc.value });
+            }
+            continue;
+        }
+
+        const desc = tryParseDescriptionVarandas(line);
+        if (desc) {
+            const isNewBlock = isStartOfNewBlockVarandas(desc, results);
+
+            if (!currentUnit || !currentComp || isNewBlock) {
+                pendingDescs.push(desc);
+            } else {
+                results.push({ unit: currentUnit, competencia: currentComp, description: desc.description, value: desc.value });
+            }
+            continue;
+        }
+
+        const blockMatch = line.match(/^(?:BLOCO|BL\.?)\s+([A-Z])/i);
+        if (blockMatch) {
+            blocksSet.add(blockMatch[1].toUpperCase());
+            continue;
+        }
+    }
+
+    for (const desc of pendingDescs) {
+        if (currentUnit && currentComp) {
+            results.push({ unit: currentUnit, competencia: currentComp, description: desc.description, value: desc.value });
+        }
+    }
+
+    return {
+        entries: deduplicateEntries(results),
+        units: Array.from(unitsSet),
+        blocks: Array.from(blocksSet).sort()
+    };
+}
+
+
+// ============================================================================
+// PDF DETECTOR AND ROUTER
+// ============================================================================
+
+/**
+ * Detects the layout format of the PDF based on textual clues in the first few lines.
+ * Returns the correct parsing strategy function.
+ */
+function detectLayoutAndParse(lines) {
+    // Combine the first 20 lines to search for clues
+    const sampleText = lines.slice(0, 20).join(' ').toLowerCase();
+
+    // Heuristics for Varandas:
+    // Usually has "UNIDADE COMPETENCIA" header, and descriptions separated by " : R$"
+    if (sampleText.includes('unidade') && sampleText.includes('compet') && sampleText.includes('descri')) {
+        console.log("Detected PDF Layout: VARANDAS");
+        return parseLinesVarandas(lines);
+    }
+
+    // Future formats can be added here:
+    // if (sampleText.includes('boleto bancario predio b')) { ... }
+
+    // Fallback if we don't recognize the format: 
+    // In the future we can make this throw an Error. For now, try Varandas.
+    console.warn("Unrecognized PDF layout. Attempting fallback parser (Varandas).");
+    const result = parseLinesVarandas(lines);
+    
+    if (result.entries.length === 0) {
+        throw new Error("UNRECOGNIZED_FORMAT");
+    }
+
+    return result;
+}
+
 /**
  * Main entry point: Parse a PDF file and return structured data.
  * @param {File} file - The PDF file to parse
@@ -359,7 +310,7 @@ function deduplicateEntries(entries) {
  */
 async function parsePDF(file) {
     const lines = await extractTextLines(file);
-    return parseLines(lines);
+    return detectLayoutAndParse(lines);
 }
 
 /**
