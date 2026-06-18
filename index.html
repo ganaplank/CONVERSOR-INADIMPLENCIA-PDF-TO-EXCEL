@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CondoConvert — PDF para Excel</title>
+    <meta name="description" content="Converta planilhas de inadimplência de condomínio de PDF para Excel automaticamente. Rápido, seguro e 100% no navegador.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+</head>
+<body>
+    <div id="app" class="app">
+        <!-- Background Effects -->
+        <div class="bg-effects" aria-hidden="true">
+            <div class="bg-gradient"></div>
+            <div class="bg-grid"></div>
+            <div class="bg-orb bg-orb-1"></div>
+            <div class="bg-orb bg-orb-2"></div>
+        </div>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">⚡</span>
+                    <h2 class="logo-text">Condo<span>Convert</span></h2>
+                </div>
+                <p class="logo-subtitle">PDF → Excel</p>
+            </div>
+
+            <nav class="steps-nav" id="stepsNav">
+                <!-- Step 1 -->
+                <div class="step-indicator active" data-step="1" id="stepInd1">
+                    <div class="step-dot">
+                        <span class="step-num">1</span>
+                        <svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="step-info">
+                        <span class="step-title">Upload</span>
+                        <span class="step-subtitle">Selecione o PDF</span>
+                    </div>
+                </div>
+                <div class="step-connector"><div class="step-connector-fill"></div></div>
+
+                <!-- Step 2 -->
+                <div class="step-indicator" data-step="2" id="stepInd2">
+                    <div class="step-dot">
+                        <span class="step-num">2</span>
+                        <svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="step-info">
+                        <span class="step-title">Configurar</span>
+                        <span class="step-subtitle">Defina os parâmetros</span>
+                    </div>
+                </div>
+                <div class="step-connector"><div class="step-connector-fill"></div></div>
+
+                <!-- Step 3 -->
+                <div class="step-indicator" data-step="3" id="stepInd3">
+                    <div class="step-dot">
+                        <span class="step-num">3</span>
+                        <svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="step-info">
+                        <span class="step-title">Preview</span>
+                        <span class="step-subtitle">Revise os dados</span>
+                    </div>
+                </div>
+                <div class="step-connector"><div class="step-connector-fill"></div></div>
+
+                <!-- Step 4 -->
+                <div class="step-indicator" data-step="4" id="stepInd4">
+                    <div class="step-dot">
+                        <span class="step-num">4</span>
+                        <svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="step-info">
+                        <span class="step-title">Download</span>
+                        <span class="step-subtitle">Baixe o Excel</span>
+                    </div>
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-badge">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="m7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <span>100% local · seus dados não saem do navegador</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent">
+            <!-- ==================== STEP 1: UPLOAD ==================== -->
+            <section class="step-content active" id="stepContent1">
+                <div class="step-header">
+                    <div class="step-header-icon">📄</div>
+                    <div>
+                        <h1>Upload do PDF</h1>
+                        <p>Selecione a planilha de inadimplência em formato PDF</p>
+                    </div>
+                </div>
+
+                <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Área de upload. Arraste um PDF ou clique para selecionar.">
+                    <div class="upload-zone-content">
+                        <div class="upload-icon-wrapper">
+                            <svg class="upload-icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                        </div>
+                        <h3>Arraste o PDF aqui</h3>
+                        <p>ou clique para selecionar o arquivo</p>
+                        <div class="upload-formats">
+                            <span class="format-badge">PDF</span>
+                            <span class="format-info">Planilha de inadimplência</span>
+                        </div>
+                    </div>
+                    <input type="file" id="fileInput" accept=".pdf" hidden>
+                </div>
+
+                <div class="file-card" id="fileCard" hidden>
+                    <div class="file-card-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                        </svg>
+                    </div>
+                    <div class="file-card-info">
+                        <span class="file-card-name" id="fileName"></span>
+                        <span class="file-card-size" id="fileSize"></span>
+                    </div>
+                    <button class="btn-icon-remove" id="removeFile" title="Remover arquivo" aria-label="Remover arquivo">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="parsing-status" id="parsingStatus" hidden>
+                    <div class="spinner"></div>
+                    <span>Lendo e analisando o PDF...</span>
+                </div>
+
+                <div class="parse-result" id="parseResult" hidden>
+                    <div class="result-badge" id="parseResultBadge">
+                        <svg class="result-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <span id="parseResultText"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== STEP 2: CONFIGURE ==================== -->
+            <section class="step-content" id="stepContent2">
+                <div class="step-header">
+                    <div class="step-header-icon">⚙️</div>
+                    <div>
+                        <h1>Configuração</h1>
+                        <p>Defina os parâmetros para a conversão</p>
+                    </div>
+                </div>
+
+                <div class="config-grid">
+                    <!-- Condomínio Card -->
+                    <div class="config-card">
+                        <div class="config-card-header">
+                            <span class="config-icon">🏢</span>
+                            <h3>Condomínio</h3>
+                        </div>
+                        <div class="form-group">
+                            <label for="condoCode">Código do Condomínio</label>
+                            <input type="text" id="condoCode" class="form-input" placeholder="Ex: 1000" autocomplete="off" spellcheck="false">
+                            <span class="form-hint">Este código será usado na coluna A do Excel</span>
+                        </div>
+                    </div>
+
+                    <!-- Unidade Card -->
+                    <div class="config-card">
+                        <div class="config-card-header">
+                            <span class="config-icon">🔢</span>
+                            <h3>Unidade</h3>
+                        </div>
+                        <div class="form-group">
+                            <label for="unitDigits">Quantidade de dígitos</label>
+                            <input type="number" id="unitDigits" class="form-input" min="1" max="10" value="2">
+                            <span class="form-hint">Quantos caracteres a unidade deve ter</span>
+                        </div>
+                        <div class="unit-preview" id="unitPreview">
+                            <span class="unit-preview-label">Preview:</span>
+                            <div class="unit-preview-items" id="unitPreviewItems"></div>
+                        </div>
+                    </div>
+
+                    <!-- Data Card -->
+                    <div class="config-card">
+                        <div class="config-card-header">
+                            <span class="config-icon">📅</span>
+                            <h3>Data</h3>
+                        </div>
+                        <div class="form-group">
+                            <label for="dateFormat">Formato do Vencimento</label>
+                            <select id="dateFormat" class="form-select">
+                                <option value="DD/MM/YYYY">DD/MM/AAAA (01/02/2026)</option>
+                                <option value="D/M/YYYY">D/M/AAAA (1/2/2026)</option>
+                                <option value="MM/DD/YYYY">MM/DD/AAAA (02/01/2026)</option>
+                                <option value="YYYY-MM-DD">AAAA-MM-DD (2026-02-01)</option>
+                                <option value="DD/MM/YY">DD/MM/AA (01/02/26)</option>
+                            </select>
+                            <span class="form-hint">Formato usado na coluna Vencimento</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Blocks Section (shown only when blocks are detected) -->
+                <div class="blocks-section" id="blocksSection" hidden>
+                    <div class="config-card config-card-full">
+                        <div class="config-card-header">
+                            <span class="config-icon">🏗️</span>
+                            <h3>Blocos Detectados</h3>
+                            <span class="detected-badge">Encontrados no PDF</span>
+                        </div>
+                        <p class="blocks-instruction">Defina o código numérico para cada bloco encontrado:</p>
+                        <div class="blocks-grid" id="blocksGrid"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== STEP 3: PREVIEW ==================== -->
+            <section class="step-content" id="stepContent3">
+                <div class="step-header">
+                    <div class="step-header-icon">👁️</div>
+                    <div>
+                        <h1>Preview dos Dados</h1>
+                        <p>Revise os dados antes de gerar o Excel</p>
+                    </div>
+                </div>
+
+                <div class="preview-stats" id="previewStats">
+                    <div class="stat-card">
+                        <span class="stat-value" id="statRows">0</span>
+                        <span class="stat-label">Linhas</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="statUnits">0</span>
+                        <span class="stat-label">Unidades</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="statComps">0</span>
+                        <span class="stat-label">Competências</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="statTotal">R$ 0</span>
+                        <span class="stat-label">Valor Total</span>
+                    </div>
+                </div>
+
+                <div class="table-wrapper" id="tableWrapper">
+                    <table class="preview-table" id="previewTable">
+                        <thead>
+                            <tr>
+                                <th>Cód. Cond.</th>
+                                <th>Cód. Bloco</th>
+                                <th>Cód. Unidade</th>
+                                <th>Vencimento</th>
+                                <th>Descrição</th>
+                                <th>Valor</th>
+                            </tr>
+                        </thead>
+                        <tbody id="previewBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ==================== STEP 4: DOWNLOAD ==================== -->
+            <section class="step-content" id="stepContent4">
+                <div class="step-header">
+                    <div class="step-header-icon">✨</div>
+                    <div>
+                        <h1>Pronto!</h1>
+                        <p>Seu arquivo Excel foi gerado com sucesso</p>
+                    </div>
+                </div>
+
+                <div class="download-area">
+                    <div class="success-animation">
+                        <div class="success-circle">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                        </div>
+                        <div class="success-ring"></div>
+                    </div>
+
+                    <h2 class="download-title">Excel gerado com sucesso!</h2>
+                    <p class="download-filename" id="downloadFilename"></p>
+
+                    <div class="download-summary" id="downloadSummary"></div>
+
+                    <button class="btn-download" id="downloadBtn">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span>Baixar Excel (.xlsx)</span>
+                    </button>
+
+                    <button class="btn-ghost" id="newConversionBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="1 4 1 10 7 10"></polyline>
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                        </svg>
+                        <span>Nova conversão</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Navigation Bar -->
+            <div class="nav-bar" id="navBar">
+                <button class="btn-back" id="btnBack" hidden>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    <span>Voltar</span>
+                </button>
+                <div class="nav-spacer"></div>
+                <button class="btn-next" id="btnNext" disabled>
+                    <span>Próximo</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="js/parser.js"></script>
+    <script src="js/excel.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
