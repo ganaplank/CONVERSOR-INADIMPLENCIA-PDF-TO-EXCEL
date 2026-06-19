@@ -37,11 +37,9 @@ function parseCompetencia(comp) {
 }
 
 /**
- * Extract text items from a PDF file and group them into lines by Y coordinate proximity.
- * @param {File} file - The PDF file
- * @returns {Promise<string[]>} Array of text lines
+ * Extract raw text items from a PDF file.
  */
-async function extractTextLines(file) {
+async function extractAllItems(file) {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
@@ -52,13 +50,12 @@ async function extractTextLines(file) {
         const textContent = await page.getTextContent();
         const viewport = page.getViewport({ scale: 1 });
 
-        // Find the X position of the "VALOR" header to identify the total column (Specific to Varandas, but safe overall)
         let valorHeaderX = null;
 
         for (const item of textContent.items) {
             if (!item.str.trim()) continue;
             const x = item.transform[4];
-            const y = viewport.height - item.transform[5]; // Convert to top-down Y
+            const y = viewport.height - item.transform[5];
 
             if (item.str.trim().toUpperCase() === 'VALOR') {
                 valorHeaderX = x;
@@ -67,37 +64,37 @@ async function extractTextLines(file) {
             allItems.push({
                 text: item.str,
                 x: Math.round(x),
-                y: Math.round(y * 10) / 10, // round to 1 decimal for grouping
+                y: Math.round(y * 10) / 10,
                 page: pageNum
             });
         }
 
-        // Store the VALOR X position for this page (reuse from page 1 if not found)
         if (valorHeaderX !== null) {
             allItems._valorX = valorHeaderX;
         }
     }
+    return allItems;
+}
 
-    // Get the total column X threshold
+/**
+ * Group text items into lines, optionally filtering out the VALOR column.
+ */
+function groupItemsIntoLines(allItems, filterValorColumn) {
     const valorX = allItems._valorX || 9999;
-    const totalColumnThreshold = valorX - 15; // Items at or past this X are totals
+    const totalColumnThreshold = valorX - 15;
 
-    // Filter out items that are in the total column (VALOR/total values on the right)
     const filteredItems = allItems.filter(item => {
-        // Keep header items
+        if (!filterValorColumn) return true; // Keep all items for new formats
         if (item.y < 50) return true;
-        // Filter out items in the total column
         return item.x < totalColumnThreshold;
     });
 
-    // Sort by page, then Y (top to bottom), then X (left to right)
     filteredItems.sort((a, b) => {
         if (a.page !== b.page) return a.page - b.page;
-        if (Math.abs(a.y - b.y) > 3) return a.y - b.y; // different lines
-        return a.x - b.x; // same line, sort by X
+        if (Math.abs(a.y - b.y) > 3) return a.y - b.y;
+        return a.x - b.x;
     });
 
-    // Group into lines by Y proximity
     const lines = [];
     let currentLine = [];
     let currentY = null;
@@ -107,7 +104,6 @@ async function extractTextLines(file) {
             currentLine.push(item);
             if (currentY === null) currentY = item.y;
         } else {
-            // New line
             if (currentLine.length > 0) {
                 currentLine.sort((a, b) => a.x - b.x);
                 const lineText = currentLine.map(i => i.text).join(' ').trim();
@@ -118,7 +114,6 @@ async function extractTextLines(file) {
         }
     }
 
-    // Flush last line
     if (currentLine.length > 0) {
         currentLine.sort((a, b) => a.x - b.x);
         const lineText = currentLine.map(i => i.text).join(' ').trim();
@@ -270,6 +265,85 @@ function parseLinesVarandas(lines) {
 
 
 // ============================================================================
+// STRATEGY: RELAÇÃO ANALÍTICA DE PENDENTES
+// ============================================================================
+
+const REL_BLOCK_UNIT_REGEX = /^Bloco\s*:\s*(.*?)\s+Unidade\s*:\s*(\S+)/i;
+const REL_PRINCIPAL_REGEX = /^(\d+)\s+(\S+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+(.*?)\s+([\d.,]+)(?:\s+[\d.,]+)*$/;
+const REL_ITEMS_REGEX = /^(\d+)\s+(.*?)\s+([\d.,]+)(?:\s+[\d.,]+)*$/;
+
+function parseLinesRelPendentes(lines) {
+    const results = [];
+    let currentUnit = null;
+    let currentComp = null;
+    const unitsSet = new Set();
+    const blocksSet = new Set();
+
+    const monthNames = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+    for (const line of lines) {
+        const text = line.trim();
+        if (!text) continue;
+
+        // Bloco e Unidade
+        const blockMatch = text.match(REL_BLOCK_UNIT_REGEX);
+        if (blockMatch) {
+            const block = blockMatch[1].trim().toUpperCase();
+            const unit = blockMatch[2].trim();
+            blocksSet.add(block);
+            unitsSet.add(unit);
+            currentUnit = unit;
+            continue;
+        }
+
+        if (!currentUnit) continue; // Skip lines until we find a unit
+
+        // Linha Principal (Recibo)
+        const mainMatch = text.match(REL_PRINCIPAL_REGEX);
+        if (mainMatch) {
+            const vencimento = mainMatch[3]; // DD/MM/YYYY
+            const description = mainMatch[6].trim();
+            const valueStr = mainMatch[7];
+
+            // Transformar "10/11/2025" em "nov/25"
+            const parts = vencimento.split('/');
+            const monthIndex = parseInt(parts[1], 10) - 1;
+            const yearStr = parts[2].substring(2);
+            currentComp = `${monthNames[monthIndex]}/${yearStr}`;
+
+            results.push({
+                unit: currentUnit,
+                competencia: currentComp,
+                description: description,
+                value: parseMoneyValue(valueStr)
+            });
+            continue;
+        }
+
+        // Linha Secundária (Itens)
+        if (currentComp) {
+            const itemMatch = text.match(REL_ITEMS_REGEX);
+            if (itemMatch) {
+                const description = itemMatch[2].trim();
+                const valueStr = itemMatch[3];
+                results.push({
+                    unit: currentUnit,
+                    competencia: currentComp,
+                    description: description,
+                    value: parseMoneyValue(valueStr)
+                });
+            }
+        }
+    }
+
+    return {
+        entries: deduplicateEntries(results),
+        units: Array.from(unitsSet),
+        blocks: Array.from(blocksSet).sort()
+    };
+}
+
+// ============================================================================
 // PDF DETECTOR AND ROUTER
 // ============================================================================
 
@@ -277,24 +351,23 @@ function parseLinesVarandas(lines) {
  * Detects the layout format of the PDF based on textual clues in the first few lines.
  * Returns the correct parsing strategy function.
  */
-function detectLayoutAndParse(lines) {
-    // Combine the first 20 lines to search for clues
-    const sampleText = lines.slice(0, 20).join(' ').toLowerCase();
+function detectLayoutAndParse(allItems) {
+    const rawLines = groupItemsIntoLines(allItems, false);
+    const sampleText = rawLines.slice(0, 20).join(' ').toLowerCase();
 
-    // Heuristics for Varandas:
-    // Usually has "UNIDADE COMPETENCIA" header, and descriptions separated by " : R$"
-    if (sampleText.includes('unidade') && sampleText.includes('compet') && sampleText.includes('descri')) {
-        console.log("Detected PDF Layout: VARANDAS");
-        return parseLinesVarandas(lines);
+    if (sampleText.includes('relação analítica de pendentes')) {
+        console.log("Detected PDF Layout: REL_PENDENTES");
+        return parseLinesRelPendentes(rawLines);
     }
 
-    // Future formats can be added here:
-    // if (sampleText.includes('boleto bancario predio b')) { ... }
+    if (sampleText.includes('unidade') && sampleText.includes('compet') && sampleText.includes('descri')) {
+        console.log("Detected PDF Layout: VARANDAS");
+        const filteredLines = groupItemsIntoLines(allItems, true);
+        return parseLinesVarandas(filteredLines);
+    }
 
-    // Fallback if we don't recognize the format: 
-    // In the future we can make this throw an Error. For now, try Varandas.
     console.warn("Unrecognized PDF layout. Attempting fallback parser (Varandas).");
-    const result = parseLinesVarandas(lines);
+    const result = parseLinesVarandas(groupItemsIntoLines(allItems, true));
     
     if (result.entries.length === 0) {
         throw new Error("UNRECOGNIZED_FORMAT");
@@ -309,8 +382,8 @@ function detectLayoutAndParse(lines) {
  * @returns {Promise<{ entries: Array, units: string[], blocks: string[] }>}
  */
 async function parsePDF(file) {
-    const lines = await extractTextLines(file);
-    return detectLayoutAndParse(lines);
+    const allItems = await extractAllItems(file);
+    return detectLayoutAndParse(allItems);
 }
 
 /**
