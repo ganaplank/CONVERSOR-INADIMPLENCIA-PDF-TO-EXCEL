@@ -20,6 +20,7 @@
             dateFormat: 'DD/MM/YYYY',
             blockCodes: {}
         },
+        extractedTotal: 0,
         workbook: null
     };
 
@@ -75,6 +76,8 @@
         statUnits: document.getElementById('statUnits'),
         statComps: document.getElementById('statComps'),
         statTotal: document.getElementById('statTotal'),
+        statPdfTotal: document.getElementById('statPdfTotal'),
+        statDiff: document.getElementById('statDiff'),
 
         // Step 4: Download
         downloadBtn: document.getElementById('downloadBtn'),
@@ -149,6 +152,11 @@
         // Download
         DOM.downloadBtn.addEventListener('click', handleDownload);
         DOM.newConversionBtn.addEventListener('click', handleNewConversion);
+
+        // Preview Validation
+        if (DOM.statPdfTotal) {
+            DOM.statPdfTotal.addEventListener('input', updateDiff);
+        }
 
         // Keyboard navigation
         document.addEventListener('keydown', handleKeyNav);
@@ -329,6 +337,7 @@
         const allEntries = [];
         const allUnits = new Set();
         const allBlocks = new Set();
+        let totalPdfValue = 0;
         let errorCount = 0;
 
         for (let i = 0; i < files.length; i++) {
@@ -343,6 +352,7 @@
                 data.entries.forEach(e => allEntries.push(e));
                 data.units.forEach(u => allUnits.add(u));
                 data.blocks.forEach(b => allBlocks.add(b));
+                totalPdfValue += (data.pdfTotal || 0);
             } catch (error) {
                 console.error(`Error parsing PDF ${file.name}:`, error);
                 errorCount++;
@@ -356,7 +366,8 @@
         state.parsedData = {
             entries: allEntries,
             units: Array.from(allUnits),
-            blocks: Array.from(allBlocks).sort()
+            blocks: Array.from(allBlocks).sort(),
+            pdfTotal: totalPdfValue
         };
 
         if (allEntries.length === 0) {
@@ -514,6 +525,37 @@
         DOM.statUnits.textContent = uniqueUnits.size;
         DOM.statComps.textContent = uniqueComps.size;
         DOM.statTotal.textContent = `R$ ${formatCurrency(totalValue)}`;
+
+        state.extractedTotal = totalValue;
+        
+        if (state.parsedData.pdfTotal > 0) {
+            DOM.statPdfTotal.value = formatCurrency(state.parsedData.pdfTotal);
+        } else {
+            DOM.statPdfTotal.value = '';
+        }
+        updateDiff();
+    }
+
+    function updateDiff() {
+        if (!DOM.statPdfTotal) return;
+        const inputVal = DOM.statPdfTotal.value;
+        
+        if (!inputVal.trim()) {
+            DOM.statDiff.textContent = 'Aguardando valor...';
+            DOM.statDiff.className = 'stat-diff';
+            return;
+        }
+
+        const pdfVal = parseMoneyValue(inputVal);
+        const diff = Math.abs(state.extractedTotal - pdfVal);
+
+        if (diff < 0.05) {
+            DOM.statDiff.textContent = '✅ Bateu (Dif: R$ 0,00)';
+            DOM.statDiff.className = 'stat-diff diff-ok';
+        } else {
+            DOM.statDiff.textContent = `❌ Dif: R$ ${formatCurrency(diff)}`;
+            DOM.statDiff.className = 'stat-diff diff-error';
+        }
     }
 
     // ========================

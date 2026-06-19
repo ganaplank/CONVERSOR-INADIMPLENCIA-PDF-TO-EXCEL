@@ -182,6 +182,43 @@ a:hover { color: var(--blue-400); }
     font-size: 1.5rem;
 }
 
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+}
+
+.stat-input {
+    width: 100%;
+    font-size: 1.25rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    border-bottom: 2px dashed var(--border);
+    text-align: center;
+    padding: 2px 0;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.stat-input:focus {
+    border-bottom-color: var(--primary);
+}
+
+.stat-diff {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-top: 4px;
+}
+
+.diff-ok { color: #10b981; }
+.diff-error { color: #ef4444; }
+
 .logo-text {
     font-size: 1.25rem;
     font-weight: 700;
@@ -852,6 +889,7 @@ a:hover { color: var(--blue-400); }
 .table-wrapper {
     flex: 1;
     overflow: auto;
+    max-height: 45vh;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);

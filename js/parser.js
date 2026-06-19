@@ -377,13 +377,31 @@ function detectLayoutAndParse(allItems) {
 }
 
 /**
+ * Heurística para tentar extrair o valor total impresso no PDF
+ */
+function extractPdfTotal(lines) {
+    const bottomLines = lines.slice(-40).reverse();
+    for (const line of bottomLines) {
+        if (/total|geral|soma|receita/i.test(line)) {
+            const matches = line.match(/[\d.,]{4,}/g);
+            if (matches) {
+                return parseMoneyValue(matches[matches.length - 1]);
+            }
+        }
+    }
+    return 0;
+}
+
+/**
  * Main entry point: Parse a PDF file and return structured data.
  * @param {File} file - The PDF file to parse
- * @returns {Promise<{ entries: Array, units: string[], blocks: string[] }>}
+ * @returns {Promise<{ entries: Array, units: string[], blocks: string[], pdfTotal: number }>}
  */
 async function parsePDF(file) {
     const allItems = await extractAllItems(file);
-    return detectLayoutAndParse(allItems);
+    const result = detectLayoutAndParse(allItems);
+    result.pdfTotal = extractPdfTotal(groupItemsIntoLines(allItems, false));
+    return result;
 }
 
 /**
