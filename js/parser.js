@@ -523,8 +523,11 @@ function parseLinesInadimplenciaParcial(lines) {
                     description: description.replace(/\s+/g, ' ').trim(),
                     value: value
                 });
-                // Consume ONE continuation line after this receipt
-                i = consumeContinuation(i + 1);
+                
+                // Only consume a continuation line if there was NO inline description
+                if (!inlineDesc) {
+                    i = consumeContinuation(i + 1);
+                }
             }
             continue;
         }
@@ -550,8 +553,11 @@ function parseLinesInadimplenciaParcial(lines) {
                     description: description.replace(/\s+/g, ' ').trim(),
                     value: value
                 });
-                // Consume ONE continuation line
-                i = consumeContinuation(i + 1);
+                
+                // Only consume a continuation line if there was NO inline description
+                if (!inlineDesc) {
+                    i = consumeContinuation(i + 1);
+                }
             }
             continue;
         }
