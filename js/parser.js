@@ -15,14 +15,16 @@ const MONTHS_PT = {
 };
 
 /**
- * Parse a Brazilian currency value string to a number.
- * Handles: "1.098,46", "997,00", "1098,46", "997,000"
+ * Parse money strings like "1.234,56" or "-16,17" to floats
  */
 function parseMoneyValue(str) {
-    if (!str) return 0;
-    // Remove dots (thousand separators), replace comma with period
-    const cleaned = str.replace(/\./g, '').replace(',', '.');
-    return parseFloat(cleaned) || 0;
+    if (!str) return 0.0;
+    // Keep digits, comma, and minus sign
+    const clean = str.replace(/[^\d,\-]/g, '');
+    const hasMinus = clean.includes('-');
+    const finalClean = clean.replace('-', '');
+    const val = parseFloat(finalClean.replace(',', '.'));
+    return hasMinus ? -val : val;
 }
 
 /**
@@ -399,8 +401,9 @@ function parseLinesInadimplenciaParcial(lines) {
     const blocksSet = new Set();
 
     const UNIT_HEADER = /^Bloco\s*:\s*(\S+)\s+Unidade\s*:\s*(\d+)\s+(.*)/i;
-    const RECEIPT_MAIN = /^(?:J\s+)?(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+(.*?)\s*R\$\s*([\d.,]+)/;
-    const RECEIPT_SECONDARY = /^(?:J\s+)?(\d+)\s+(\d+)\s+(.*?)\s*R\$\s*([\d.,]+)/;
+    // Prefix can be 'J', 'A', etc. Number can be negative.
+    const RECEIPT_MAIN = /^(?:[a-zA-Z]\s+)?(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+(.*?)\s*R\$\s*(-?[\d.,]+)/;
+    const RECEIPT_SECONDARY = /^(?:[a-zA-Z]\s+)?(\d+)\s+(\d+)\s+(.*?)\s*R\$\s*(-?[\d.,]+)/;
     const MONTH_PATTERN = /(JANEIRO|FEVEREIRO|MAR[CÇ]O|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)\/(\d{4})/i;
     const monthNames = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -636,9 +639,19 @@ function detectLayoutAndParse(allItems) {
  * Heurística para tentar extrair o valor total impresso no PDF
  */
 function extractPdfTotal(lines) {
-    const bottomLines = lines.slice(-40).reverse();
-    for (const line of bottomLines) {
-        if (/total|geral|soma|receita/i.test(line)) {
+    const bottomLines = lines.slice(-40);
+    for (let i = 0; i < bottomLines.length; i++) {
+        const line = bottomLines[i];
+        if (/total do condom[íi]nio/i.test(line)) {
+            // Look ahead for R$ line
+            for (let j = i + 1; j < Math.min(i + 5, bottomLines.length); j++) {
+                if (bottomLines[j].includes('R$')) {
+                    const matches = bottomLines[j].match(/R\$\s*([\d.,]+)/);
+                    if (matches) return parseMoneyValue(matches[1]);
+                }
+            }
+        }
+        if (/total|geral|soma|receita/i.test(line) && !/total geral da unidade/i.test(line)) {
             const matches = line.match(/[\d.,]{4,}/g);
             if (matches) {
                 return parseMoneyValue(matches[matches.length - 1]);
