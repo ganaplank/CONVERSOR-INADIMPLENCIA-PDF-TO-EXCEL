@@ -360,11 +360,11 @@ const MONTH_FULL_TO_ABBR = {
  * Returns { comp: "fev/26", cleanDesc: "COND." } or null
  */
 function extractCompFromDesc(text) {
-    // Pattern: MONTH_NAME/YEAR (e.g. FEVEREIRO/2026, ABRIL/2026)
-    const match = text.match(/(\w+)\/(\d{4})/i);
+    // Pattern: MONTH_NAME/YEAR
+    const match = text.match(/(JANEIRO|FEVEREIRO|MAR[CÇ]O|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)\/(\d{4})/i);
     if (match) {
-        const monthName = match[1].toLowerCase();
-        const abbr = MONTH_FULL_TO_ABBR[monthName];
+        const monthName = match[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const abbr = MONTH_FULL_TO_ABBR[monthName] || MONTH_FULL_TO_ABBR[match[1].toLowerCase()];
         if (abbr) {
             const yearShort = match[2].substring(2);
             const comp = `${abbr}/${yearShort}`;
