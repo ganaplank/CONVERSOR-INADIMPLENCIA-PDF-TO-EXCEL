@@ -377,12 +377,18 @@ function extractCompFromDesc(text) {
 
 /**
  * Parse lines from the "Inadimplência Parcial" format (Webmínio portal).
- * Structure:
- *   - Unit header: "Bloco: X Unidade: NNNNNN NOME COMPLETO"
- *   - Receipt main line: "[J ]RECIBO_NUM DD/MM/YYYY EMISSAO CONTA R$ VALUE ..."
- *   - Receipt secondary line: "[J ]RECIBO_NUM CONTA R$ VALUE ..."  (description on prev/next line)
- *   - Description lines: "COND.", "FEVEREIRO/2026", "FUNDO DE", "RESERVA", etc.
- *   - Totals to skip: "Total do Recibo:", "Total Geral da Unidade:"
+ *
+ * Key insight: descriptions WRAP AROUND receipt lines.
+ *   "FUNDO DE"          ← prefix (before receipt)
+ *   61926023 4073 R$…   ← receipt line
+ *   "RESERVA"           ← suffix (after receipt, continuation)
+ * Full description = "FUNDO DE RESERVA"
+ *
+ * Rule: after each receipt, consume AT MOST ONE post-line:
+ *   - If it's a MONTH line (FEVEREIRO/2026) → skip it (comp already from date)
+ *   - If it's plain text → append as description continuation
+ *   - Anything else → stop (it's structural)
+ * Then subsequent text lines become pendingDesc for the NEXT receipt.
  */
 function parseLinesInadimplenciaParcial(lines) {
     const results = [];
@@ -392,48 +398,84 @@ function parseLinesInadimplenciaParcial(lines) {
     const unitsSet = new Set();
     const blocksSet = new Set();
 
-    // Regex for unit header: Bloco: 0 Unidade: 000032 NOME
     const UNIT_HEADER = /^Bloco\s*:\s*(\S+)\s+Unidade\s*:\s*(\d+)\s+(.*)/i;
-
-    // Regex for receipt line with date (main line):
-    // [J ]61926023 08/02/2026 408996 2542 [DESCRIPTION] R$ 550,22 550,22 ...
     const RECEIPT_MAIN = /^(?:J\s+)?(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+(.*?)\s*R\$\s*([\d.,]+)/;
-
-    // Regex for secondary receipt line (no date):
-    // [J ]61926023 4073 R$ 27,51 27,51 ...
     const RECEIPT_SECONDARY = /^(?:J\s+)?(\d+)\s+(\d+)\s+(.*?)\s*R\$\s*([\d.,]+)/;
-
-    // Month names in descriptions for competência extraction
     const MONTH_PATTERN = /(JANEIRO|FEVEREIRO|MAR[CÇ]O|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)\/(\d{4})/i;
-
     const monthNames = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
-    // Buffer for accumulating multi-line descriptions
     let pendingDesc = '';
+
+    // Helper: is this line noise/header that should be skipped entirely?
+    function isNoiseLine(text) {
+        return /^No que podemos/i.test(text)
+            || /^Daniel Meneghin/i.test(text)
+            || /^Informe a Unidade/i.test(text)
+            || /^Exportar Excel/i.test(text)
+            || /^Per[ií]odo de/i.test(text)
+            || /^Condom[ií]nio:/i.test(text)
+            || /^Recibo\s+Vencimento/i.test(text)
+            || /^Original\s+Principal/i.test(text)
+            || /^Valor\s+Valor/i.test(text)
+            || /^Total do Recibo/i.test(text)
+            || /^Total Geral da Unidade/i.test(text)
+            || /^Quantidade de unidade/i.test(text)
+            || /^Importante\s*:/i.test(text)
+            || /^Webm[ií]nio/i.test(text)
+            || /^Atendimento$/i.test(text)
+            || /^R\$\s+[\d.,]+\s+[\d.,]+/i.test(text)
+            || /^\d+\s*:$/i.test(text);
+    }
+
+    // Helper: is this a structural line (receipt, unit header, total)?
+    function isStructuralLine(text) {
+        return RECEIPT_MAIN.test(text)
+            || RECEIPT_SECONDARY.test(text)
+            || UNIT_HEADER.test(text)
+            || /^Total/i.test(text)
+            || /^Bloco\s*:/i.test(text)
+            || isNoiseLine(text);
+    }
+
+    // Helper: clean garbage from page-break text corruption
+    function cleanDescText(text) {
+        return text.replace(/A\d*t[,.]?\d*e\d*n\d*d\d*i\d*m\d*e\d*n\d*t\d*o\d*/gi, '').trim();
+    }
+
+    // After pushing a receipt result, look ahead and consume ONE continuation line
+    function consumeContinuation(startIdx) {
+        for (let j = startIdx; j < lines.length; j++) {
+            const nextLine = lines[j].trim();
+            if (!nextLine) continue;
+            if (isNoiseLine(nextLine)) continue;
+
+            // Month line → skip it, counts as the "one post-line" consumed
+            if (MONTH_PATTERN.test(nextLine)) {
+                return j; // consumed the month, stop
+            }
+
+            // Structural line → don't consume, stop
+            if (isStructuralLine(nextLine)) {
+                return j - 1; // back up, main loop will process it
+            }
+
+            // Plain text → it's continuation, append to last result
+            const cleaned = cleanDescText(nextLine);
+            if (cleaned && results.length > 0) {
+                const last = results[results.length - 1];
+                last.description = (last.description + ' ' + cleaned).replace(/\s+/g, ' ').trim();
+            }
+            return j; // consumed one text line, stop
+        }
+        return startIdx - 1;
+    }
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
+        if (isNoiseLine(line)) continue;
 
-        // Skip noise lines
-        if (/^No que podemos/i.test(line)) continue;
-        if (/^Daniel Meneghin/i.test(line)) continue;
-        if (/^Informe a Unidade/i.test(line)) continue;
-        if (/^Exportar Excel/i.test(line)) continue;
-        if (/^Per[ií]odo de/i.test(line)) continue;
-        if (/^Condom[ií]nio:/i.test(line)) continue;
-        if (/^Recibo\s+Vencimento/i.test(line)) continue;
-        if (/^Original\s+Principal/i.test(line)) continue;
-        if (/^Valor\s+Valor/i.test(line)) continue;
-        if (/^Total do Recibo/i.test(line)) continue;
-        if (/^Total Geral da Unidade/i.test(line)) continue;
-        if (/^Quantidade de unidade/i.test(line)) continue;
-        if (/^Importante\s*:/i.test(line)) continue;
-        if (/^Webm[ií]nio/i.test(line)) continue;
-        if (/^Atendimento$/i.test(line)) continue;
-        if (/^R\$\s+[\d.,]+\s+[\d.,]+/i.test(line)) continue; // Total lines starting with R$
-
-        // Unit header
+        // ── Unit header ──
         const unitMatch = line.match(UNIT_HEADER);
         if (unitMatch) {
             currentBlock = unitMatch[1].trim();
@@ -447,53 +489,28 @@ function parseLinesInadimplenciaParcial(lines) {
 
         if (!currentUnit) continue;
 
-        // Main receipt line (has date)
+        // ── Main receipt line (has date) ──
         const mainMatch = line.match(RECEIPT_MAIN);
         if (mainMatch) {
-            const vencimento = mainMatch[2]; // DD/MM/YYYY
+            const vencimento = mainMatch[2];
             const inlineDesc = mainMatch[5].trim();
             const value = parseMoneyValue(mainMatch[6]);
 
-            // Extract competência from vencimento date
+            // Comp from vencimento date
             const parts = vencimento.split('/');
             const monthIndex = parseInt(parts[1], 10) - 1;
-            const yearStr = parts[2].substring(2);
-            currentComp = `${monthNames[monthIndex]}/${yearStr}`;
+            currentComp = `${monthNames[monthIndex]}/${parts[2].substring(2)}`;
 
-            // Check if description contains month (e.g. "COND. ABRIL/2026" inline)
-            let description = '';
+            // Build description: pendingDesc (prefix) + inline
+            let description = pendingDesc;
             if (inlineDesc) {
                 const compExtract = extractCompFromDesc(inlineDesc);
-                if (compExtract && compExtract.cleanDesc) {
-                    description = compExtract.cleanDesc;
-                } else if (inlineDesc && !MONTH_PATTERN.test(inlineDesc)) {
-                    description = inlineDesc;
-                }
-            }
-
-            // If we had a pending description from previous line, use it
-            if (!description && pendingDesc) {
-                description = pendingDesc;
-            }
-
-            // Description might be on the NEXT line
-            if (!description) {
-                // Look ahead for description
-                let nextLine = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
-                // Only use it if it's not another receipt/unit/total line
-                if (nextLine && !RECEIPT_MAIN.test(nextLine) && !RECEIPT_SECONDARY.test(nextLine) &&
-                    !UNIT_HEADER.test(nextLine) && !/^Total/i.test(nextLine) &&
-                    !/^Bloco\s*:/i.test(nextLine) && !/^Atendimento$/i.test(nextLine)) {
-                    // Check for month pattern in next line
-                    const monthMatch = nextLine.match(MONTH_PATTERN);
-                    if (monthMatch) {
-                        // This is just the month, desc was on the previous pending
-                        nextLine = nextLine.replace(MONTH_PATTERN, '').trim();
+                if (compExtract) {
+                    if (compExtract.cleanDesc) {
+                        description = description ? `${description} ${compExtract.cleanDesc}` : compExtract.cleanDesc;
                     }
-                    if (nextLine) {
-                        description = nextLine;
-                        i++; // consume the next line
-                    }
+                } else {
+                    description = description ? `${description} ${inlineDesc}` : inlineDesc;
                 }
             }
 
@@ -506,36 +523,22 @@ function parseLinesInadimplenciaParcial(lines) {
                     description: description.replace(/\s+/g, ' ').trim(),
                     value: value
                 });
+                // Consume ONE continuation line after this receipt
+                i = consumeContinuation(i + 1);
             }
             continue;
         }
 
-        // Secondary receipt line (same receipt number, different account)
+        // ── Secondary receipt line (no date, same receipt group) ──
         const secMatch = line.match(RECEIPT_SECONDARY);
         if (secMatch && currentComp) {
             const inlineDesc = secMatch[3].trim();
             const value = parseMoneyValue(secMatch[4]);
 
-            let description = '';
+            // Build description: pendingDesc (prefix) + inline
+            let description = pendingDesc;
             if (inlineDesc) {
-                description = inlineDesc;
-            }
-
-            // If no inline description, use pending from previous line
-            if (!description && pendingDesc) {
-                description = pendingDesc;
-            }
-
-            // If still no description, look ahead
-            if (!description) {
-                let nextLine = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
-                if (nextLine && !RECEIPT_MAIN.test(nextLine) && !RECEIPT_SECONDARY.test(nextLine) &&
-                    !UNIT_HEADER.test(nextLine) && !/^Total/i.test(nextLine) &&
-                    !/^Bloco\s*:/i.test(nextLine) && !/^Atendimento$/i.test(nextLine) &&
-                    !/^R\$/.test(nextLine)) {
-                    description = nextLine;
-                    i++;
-                }
+                description = description ? `${description} ${inlineDesc}` : inlineDesc;
             }
 
             pendingDesc = '';
@@ -547,22 +550,20 @@ function parseLinesInadimplenciaParcial(lines) {
                     description: description.replace(/\s+/g, ' ').trim(),
                     value: value
                 });
+                // Consume ONE continuation line
+                i = consumeContinuation(i + 1);
             }
             continue;
         }
 
-        // It's a description line (not a receipt, not a header, not a total)
-        // Examples: "COND.", "FEVEREIRO/2026", "FUNDO DE", "RESERVA", "CONSUMO", "ÁGUA"
-        // Check if it's a month/year line
+        // ── Month line (standalone, e.g. "FEVEREIRO/2026") ──
         const monthMatch = line.match(MONTH_PATTERN);
         if (monthMatch) {
-            // Update competência from the month in description
-            const mName = monthMatch[1].toLowerCase().replace('ç', 'c');
-            const abbr = MONTH_FULL_TO_ABBR[mName] || MONTH_FULL_TO_ABBR[mName.replace('c', 'ç')];
+            const mName = monthMatch[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const abbr = MONTH_FULL_TO_ABBR[mName] || MONTH_FULL_TO_ABBR[monthMatch[1].toLowerCase()];
             if (abbr) {
                 currentComp = `${abbr}/${monthMatch[2].substring(2)}`;
             }
-            // Clean whatever description was around the month
             const clean = line.replace(MONTH_PATTERN, '').trim();
             if (clean) {
                 pendingDesc = pendingDesc ? `${pendingDesc} ${clean}` : clean;
@@ -570,17 +571,10 @@ function parseLinesInadimplenciaParcial(lines) {
             continue;
         }
 
-        // Regular description fragment: accumulate it
-        // Remove trailing garbage like "A0t,8e4ndime2n9,t2o7" from page breaks
-        const cleanLine = line.replace(/A\d*t[,.]?\d*e\d*n\d*d\d*i\d*m\d*e\d*n\d*t\d*o\d*/gi, '').trim();
+        // ── Description fragment → accumulate as prefix for the next receipt ──
+        const cleanLine = cleanDescText(line);
         if (cleanLine && !/^\d+[.,]\d+$/.test(cleanLine)) {
-            // Merge multi-line descriptions: "FUNDO DE" + "RESERVA" = "FUNDO DE RESERVA"
-            // "RECOMPOSIÇÃO" + "DE CAIXA 3/6" = "RECOMPOSIÇÃO DE CAIXA"
-            if (pendingDesc) {
-                pendingDesc = `${pendingDesc} ${cleanLine}`;
-            } else {
-                pendingDesc = cleanLine;
-            }
+            pendingDesc = pendingDesc ? `${pendingDesc} ${cleanLine}` : cleanLine;
         }
     }
 
