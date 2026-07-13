@@ -344,6 +344,255 @@ function parseLinesRelPendentes(lines) {
 }
 
 // ============================================================================
+// STRATEGY: INADIMPLÊNCIA PARCIAL (Webmínio Portal)
+// ============================================================================
+
+// Month full name to abbreviation mapping
+const MONTH_FULL_TO_ABBR = {
+    'janeiro': 'jan', 'fevereiro': 'fev', 'março': 'mar', 'marco': 'mar',
+    'abril': 'abr', 'maio': 'mai', 'junho': 'jun',
+    'julho': 'jul', 'agosto': 'ago', 'setembro': 'set',
+    'outubro': 'out', 'novembro': 'nov', 'dezembro': 'dez'
+};
+
+/**
+ * Extract competência from description text like "COND. FEVEREIRO/2026" or "COND. ABRIL/2026"
+ * Returns { comp: "fev/26", cleanDesc: "COND." } or null
+ */
+function extractCompFromDesc(text) {
+    // Pattern: MONTH_NAME/YEAR (e.g. FEVEREIRO/2026, ABRIL/2026)
+    const match = text.match(/(\w+)\/(\d{4})/i);
+    if (match) {
+        const monthName = match[1].toLowerCase();
+        const abbr = MONTH_FULL_TO_ABBR[monthName];
+        if (abbr) {
+            const yearShort = match[2].substring(2);
+            const comp = `${abbr}/${yearShort}`;
+            const cleanDesc = text.replace(match[0], '').trim();
+            return { comp, cleanDesc };
+        }
+    }
+    return null;
+}
+
+/**
+ * Parse lines from the "Inadimplência Parcial" format (Webmínio portal).
+ * Structure:
+ *   - Unit header: "Bloco: X Unidade: NNNNNN NOME COMPLETO"
+ *   - Receipt main line: "[J ]RECIBO_NUM DD/MM/YYYY EMISSAO CONTA R$ VALUE ..."
+ *   - Receipt secondary line: "[J ]RECIBO_NUM CONTA R$ VALUE ..."  (description on prev/next line)
+ *   - Description lines: "COND.", "FEVEREIRO/2026", "FUNDO DE", "RESERVA", etc.
+ *   - Totals to skip: "Total do Recibo:", "Total Geral da Unidade:"
+ */
+function parseLinesInadimplenciaParcial(lines) {
+    const results = [];
+    let currentUnit = null;
+    let currentBlock = '0';
+    let currentComp = null;
+    const unitsSet = new Set();
+    const blocksSet = new Set();
+
+    // Regex for unit header: Bloco: 0 Unidade: 000032 NOME
+    const UNIT_HEADER = /^Bloco\s*:\s*(\S+)\s+Unidade\s*:\s*(\d+)\s+(.*)/i;
+
+    // Regex for receipt line with date (main line):
+    // [J ]61926023 08/02/2026 408996 2542 [DESCRIPTION] R$ 550,22 550,22 ...
+    const RECEIPT_MAIN = /^(?:J\s+)?(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+(.*?)\s*R\$\s*([\d.,]+)/;
+
+    // Regex for secondary receipt line (no date):
+    // [J ]61926023 4073 R$ 27,51 27,51 ...
+    const RECEIPT_SECONDARY = /^(?:J\s+)?(\d+)\s+(\d+)\s+(.*?)\s*R\$\s*([\d.,]+)/;
+
+    // Month names in descriptions for competência extraction
+    const MONTH_PATTERN = /(JANEIRO|FEVEREIRO|MAR[CÇ]O|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)\/(\d{4})/i;
+
+    const monthNames = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+    // Buffer for accumulating multi-line descriptions
+    let pendingDesc = '';
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Skip noise lines
+        if (/^No que podemos/i.test(line)) continue;
+        if (/^Daniel Meneghin/i.test(line)) continue;
+        if (/^Informe a Unidade/i.test(line)) continue;
+        if (/^Exportar Excel/i.test(line)) continue;
+        if (/^Per[ií]odo de/i.test(line)) continue;
+        if (/^Condom[ií]nio:/i.test(line)) continue;
+        if (/^Recibo\s+Vencimento/i.test(line)) continue;
+        if (/^Original\s+Principal/i.test(line)) continue;
+        if (/^Valor\s+Valor/i.test(line)) continue;
+        if (/^Total do Recibo/i.test(line)) continue;
+        if (/^Total Geral da Unidade/i.test(line)) continue;
+        if (/^Quantidade de unidade/i.test(line)) continue;
+        if (/^Importante\s*:/i.test(line)) continue;
+        if (/^Webm[ií]nio/i.test(line)) continue;
+        if (/^Atendimento$/i.test(line)) continue;
+        if (/^R\$\s+[\d.,]+\s+[\d.,]+/i.test(line)) continue; // Total lines starting with R$
+
+        // Unit header
+        const unitMatch = line.match(UNIT_HEADER);
+        if (unitMatch) {
+            currentBlock = unitMatch[1].trim();
+            currentUnit = unitMatch[2].trim();
+            unitsSet.add(currentUnit);
+            blocksSet.add(currentBlock);
+            currentComp = null;
+            pendingDesc = '';
+            continue;
+        }
+
+        if (!currentUnit) continue;
+
+        // Main receipt line (has date)
+        const mainMatch = line.match(RECEIPT_MAIN);
+        if (mainMatch) {
+            const vencimento = mainMatch[2]; // DD/MM/YYYY
+            const inlineDesc = mainMatch[5].trim();
+            const value = parseMoneyValue(mainMatch[6]);
+
+            // Extract competência from vencimento date
+            const parts = vencimento.split('/');
+            const monthIndex = parseInt(parts[1], 10) - 1;
+            const yearStr = parts[2].substring(2);
+            currentComp = `${monthNames[monthIndex]}/${yearStr}`;
+
+            // Check if description contains month (e.g. "COND. ABRIL/2026" inline)
+            let description = '';
+            if (inlineDesc) {
+                const compExtract = extractCompFromDesc(inlineDesc);
+                if (compExtract && compExtract.cleanDesc) {
+                    description = compExtract.cleanDesc;
+                } else if (inlineDesc && !MONTH_PATTERN.test(inlineDesc)) {
+                    description = inlineDesc;
+                }
+            }
+
+            // If we had a pending description from previous line, use it
+            if (!description && pendingDesc) {
+                description = pendingDesc;
+            }
+
+            // Description might be on the NEXT line
+            if (!description) {
+                // Look ahead for description
+                let nextLine = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
+                // Only use it if it's not another receipt/unit/total line
+                if (nextLine && !RECEIPT_MAIN.test(nextLine) && !RECEIPT_SECONDARY.test(nextLine) &&
+                    !UNIT_HEADER.test(nextLine) && !/^Total/i.test(nextLine) &&
+                    !/^Bloco\s*:/i.test(nextLine) && !/^Atendimento$/i.test(nextLine)) {
+                    // Check for month pattern in next line
+                    const monthMatch = nextLine.match(MONTH_PATTERN);
+                    if (monthMatch) {
+                        // This is just the month, desc was on the previous pending
+                        nextLine = nextLine.replace(MONTH_PATTERN, '').trim();
+                    }
+                    if (nextLine) {
+                        description = nextLine;
+                        i++; // consume the next line
+                    }
+                }
+            }
+
+            pendingDesc = '';
+            if (description && value > 0) {
+                results.push({
+                    unit: currentUnit,
+                    block: currentBlock,
+                    competencia: currentComp,
+                    description: description.replace(/\s+/g, ' ').trim(),
+                    value: value
+                });
+            }
+            continue;
+        }
+
+        // Secondary receipt line (same receipt number, different account)
+        const secMatch = line.match(RECEIPT_SECONDARY);
+        if (secMatch && currentComp) {
+            const inlineDesc = secMatch[3].trim();
+            const value = parseMoneyValue(secMatch[4]);
+
+            let description = '';
+            if (inlineDesc) {
+                description = inlineDesc;
+            }
+
+            // If no inline description, use pending from previous line
+            if (!description && pendingDesc) {
+                description = pendingDesc;
+            }
+
+            // If still no description, look ahead
+            if (!description) {
+                let nextLine = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
+                if (nextLine && !RECEIPT_MAIN.test(nextLine) && !RECEIPT_SECONDARY.test(nextLine) &&
+                    !UNIT_HEADER.test(nextLine) && !/^Total/i.test(nextLine) &&
+                    !/^Bloco\s*:/i.test(nextLine) && !/^Atendimento$/i.test(nextLine) &&
+                    !/^R\$/.test(nextLine)) {
+                    description = nextLine;
+                    i++;
+                }
+            }
+
+            pendingDesc = '';
+            if (description && value > 0) {
+                results.push({
+                    unit: currentUnit,
+                    block: currentBlock,
+                    competencia: currentComp,
+                    description: description.replace(/\s+/g, ' ').trim(),
+                    value: value
+                });
+            }
+            continue;
+        }
+
+        // It's a description line (not a receipt, not a header, not a total)
+        // Examples: "COND.", "FEVEREIRO/2026", "FUNDO DE", "RESERVA", "CONSUMO", "ÁGUA"
+        // Check if it's a month/year line
+        const monthMatch = line.match(MONTH_PATTERN);
+        if (monthMatch) {
+            // Update competência from the month in description
+            const mName = monthMatch[1].toLowerCase().replace('ç', 'c');
+            const abbr = MONTH_FULL_TO_ABBR[mName] || MONTH_FULL_TO_ABBR[mName.replace('c', 'ç')];
+            if (abbr) {
+                currentComp = `${abbr}/${monthMatch[2].substring(2)}`;
+            }
+            // Clean whatever description was around the month
+            const clean = line.replace(MONTH_PATTERN, '').trim();
+            if (clean) {
+                pendingDesc = pendingDesc ? `${pendingDesc} ${clean}` : clean;
+            }
+            continue;
+        }
+
+        // Regular description fragment: accumulate it
+        // Remove trailing garbage like "A0t,8e4ndime2n9,t2o7" from page breaks
+        const cleanLine = line.replace(/A\d*t[,.]?\d*e\d*n\d*d\d*i\d*m\d*e\d*n\d*t\d*o\d*/gi, '').trim();
+        if (cleanLine && !/^\d+[.,]\d+$/.test(cleanLine)) {
+            // Merge multi-line descriptions: "FUNDO DE" + "RESERVA" = "FUNDO DE RESERVA"
+            // "RECOMPOSIÇÃO" + "DE CAIXA 3/6" = "RECOMPOSIÇÃO DE CAIXA"
+            if (pendingDesc) {
+                pendingDesc = `${pendingDesc} ${cleanLine}`;
+            } else {
+                pendingDesc = cleanLine;
+            }
+        }
+    }
+
+    return {
+        entries: deduplicateEntries(results),
+        units: Array.from(unitsSet),
+        blocks: Array.from(blocksSet).sort()
+    };
+}
+
+
+// ============================================================================
 // PDF DETECTOR AND ROUTER
 // ============================================================================
 
@@ -358,6 +607,13 @@ function detectLayoutAndParse(allItems) {
     if (sampleText.includes('relação analítica de pendentes')) {
         console.log("Detected PDF Layout: REL_PENDENTES");
         return parseLinesRelPendentes(rawLines);
+    }
+
+    // Detect "Inadimplência Parcial" format (Webmínio portal)
+    if (sampleText.includes('recibo') && sampleText.includes('vencimento') &&
+        sampleText.includes('emissão') && sampleText.includes('conta')) {
+        console.log("Detected PDF Layout: INADIMPLENCIA_PARCIAL");
+        return parseLinesInadimplenciaParcial(rawLines);
     }
 
     if (sampleText.includes('unidade') && sampleText.includes('compet') && sampleText.includes('descri')) {
