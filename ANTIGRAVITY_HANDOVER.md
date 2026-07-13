@@ -46,4 +46,16 @@ Sua missão principal a partir de agora é **escalar o suporte a novos formatos 
 ## 📝 Como agir com este usuário:
 O usuário quer velocidade, foco em resultado, e não gosta de linguajar muito técnico. Sempre faça as edições de código e diga "Pronto, testa aí!". Foque em manter a interface corporativa, clean e hiper-funcional.
 
+---
+
+## ✅ Feito Hoje (Última Sessão)
+- **Sanitização:** Inclusão de regras em `INSTRUCOES_SEGURANCA.md` para evitar vazamentos de dados (PII).
+- **Validação Cruzada:** Implementação de scripts Python para validar precisamente e gerar um diff rigoroso entre o que foi lido no PDF e o que foi gerado no Excel (foco em zero perdas).
+- **Correção Definitiva do Parser "Inadimplência Parcial" (`js/parser.js`):**
+  - **Correção da Lógica Multilinha:** A função agora detecta corretamente se a descrição do recibo é "inline" ou "quebrada", acabando com os bugs de junções falsas de texto.
+  - **Ajuste de Competência (Regex):** Correção do parsing de datas e meses acentuados, como `MARÇO`, para compor corretamente a competência das despesas.
+  - **Identificadores Dinâmicos:** A regex de captura de recibos foi reescrita para aceitar qualquer prefixo de letra (Ex: não apenas `J`, mas também `A`).
+  - **Valores Negativos:** `parseMoneyValue` refatorado para manter os sinais de `-` (ex. descontos e recomposições) somando negativamente ao invés de positivamente.
+  - **Conserto do Preview (Total do PDF):** A heurística `extractPdfTotal` foi ajustada para procurar agressivamente a assinatura do total do condomínio ao invés de confundir com o subtotal da última unidade impressa (evitando avisos absurdos de diferença financeira na UI).
+
 *Boa sorte no desenvolvimento!*
